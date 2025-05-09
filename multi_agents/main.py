@@ -59,3 +59,6 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+    # Keep the terminal window open after execution
+    input("Press Enter to exit...")

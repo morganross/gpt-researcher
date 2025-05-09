@@ -141,7 +141,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Multi-agent research CLI")
 
     # Positional argument for the query
-    parser.add_argument("query", type=str, nargs='?', help="The research query (optional if provided in task config or query file).")
+    parser.add_argument("--query", type=str, help="The research query (optional if provided in task config or query file).")
 
     # Optional argument for a task configuration file
     parser.add_argument("--task-config", type=str, help="Path to a task configuration JSON file.")
