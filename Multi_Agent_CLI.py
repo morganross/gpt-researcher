@@ -14,21 +14,24 @@ from gpt_researcher.utils.enum import Tone # Assuming Tone is needed
 from dotenv import load_dotenv
 
 # Load default task configuration
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_TASK_PATH = os.path.join(CURRENT_DIR, 'multi_agents', 'task.json') # Corrected path
-try:
-    with open(DEFAULT_TASK_PATH, 'r') as _f:
-        DEFAULT_TASK = json.load(_f)
-except FileNotFoundError:
-    print(f"Error: Default task file not found at {DEFAULT_TASK_PATH}")
-    sys.exit(1)
-except json.JSONDecodeError:
-    print(f"Error: Could not decode JSON from {DEFAULT_TASK_PATH}")
-    sys.exit(1)
-
-# Recognize keys from the default task for argument parsing
-# RECOGNIZED_KEYS is no longer needed as arguments are hardcoded
-# RECOGNIZED_KEYS = set(DEFAULT_TASK.keys())
+DEFAULT_TASK = {
+  "query": "Is AI in a hype cycle?",
+  "max_sections": 3,
+  "publish_formats": {
+    "markdown": True,
+    "pdf": True,
+    "docx": True
+  },
+  "include_human_feedback": False,
+  "follow_guidelines": False,
+  "model": "gpt-4o",
+  "guidelines": [
+    "The report MUST be written in APA format",
+    "Each sub section MUST include supporting sources using hyperlinks. If none exist, erase the sub section or rewrite it to be a part of the previous section",
+    "The report MUST be written in spanish"
+  ],
+  "verbose": True
+}
 
 def deep_merge(dict1, dict2):
     """
@@ -41,13 +44,66 @@ def deep_merge(dict1, dict2):
         else:
             dict1[key] = value
 
+def open_task():
+    """
+    Loads the task configuration from task.json in the config subdirectory relative to the executable.
+    If task.json does not exist, it creates a default task.json file.
+    """
+    # Determine the path for task.json relative to the executable
+    exe_dir = os.path.dirname(sys.executable)
+    config_dir = os.path.join(exe_dir, 'config')
+    task_json_path = os.path.join(config_dir, 'task.json')
+
+    task = None
+
+    # Check if the config directory exists, create if not
+    if not os.path.exists(config_dir):
+        try:
+            os.makedirs(config_dir)
+            print(f"Created config directory at '{config_dir}'")
+        except OSError:
+            print(f"Warning: Could not create config directory at '{config_dir}'")
+
+    # Check if task.json exists
+    if os.path.exists(task_json_path):
+        try:
+            with open(task_json_path, 'r') as f:
+                task = json.load(f)
+            print(f"Loaded task.json from '{task_json_path}'")
+        except json.JSONDecodeError:
+            print(f"Error: Could not decode JSON from '{task_json_path}'. Creating a default task.json.")
+            task = None # Reset task to trigger default creation
+
+    # If task.json did not exist or had a decoding error, create a default one
+    if task is None:
+        task = deepcopy(DEFAULT_TASK) # Use the loaded default task content
+        try:
+            with open(task_json_path, 'w') as f:
+                json.dump(task, f, indent=2)
+            print(f"Created default task.json at '{task_json_path}'")
+        except IOError:
+            print(f"Error: Could not write default task.json to '{task_json_path}'")
+            # Fall back to using DEFAULT_TASK without writing to file
+            task = deepcopy(DEFAULT_TASK)
+
+    # Override model with STRATEGIC_LLM if defined in environment
+    strategic_llm = os.environ.get("STRATEGIC_LLM")
+    if strategic_llm and ":" in strategic_llm:
+        # Extract the model name (part after the first colon)
+        model_name = strategic_llm.split(":", 1)[1]
+        task["model"] = model_name
+    elif strategic_llm:
+        task["model"] = strategic_llm # Use the full strategic_llm value if no colon
+
+    return task
+
 def load_task_config(args):
     """
     Load and assemble configuration based on the specified hierarchy:
-    Default task.json -> Specified task file -> Query file -> Guidelines file -> Command-line arguments.
+    task.json (from open_task) -> Specified task file -> Query file -> Guidelines file -> Command-line arguments.
     """
-    # 1. Start with default configuration
-    config = deepcopy(DEFAULT_TASK)
+    # 1. Start with configuration from open_task()
+    config = open_task()
 
     # 2. Load from a specified task config file if provided
     if args.task_config:
@@ -172,8 +228,37 @@ async def main():
     parser.add_argument("--guidelines", nargs="+", type=str, help=f"Set guidelines (default: {DEFAULT_TASK.get('guidelines')})")
     parser.add_argument("--verbose", action=argparse.BooleanOptionalAction, help=f"Enable/disable verbose output (default: {DEFAULT_TASK.get('verbose')})")
 
+    # Add arguments for API keys
+    parser.add_argument("--openai-api-key", type=str, help="Set the OpenAI API key.")
+    parser.add_argument("--tavily-api-key", type=str, help="Set the Tavily API key.")
 
     args = parser.parse_args()
+
+    # --- API Key Handling ---
+    openai_api_key = args.openai_api_key or os.environ.get("OPENAI_API_KEY")
+    tavily_api_key = args.tavily_api_key or os.environ.get("TAVILY_API_KEY")
+
+    keys_obtained_interactively = {}
+
+    if not openai_api_key:
+        openai_api_key = input("Please enter your OPENAI_API_KEY: ")
+        keys_obtained_interactively["OPENAI_API_KEY"] = openai_api_key
+
+    if not tavily_api_key:
+        tavily_api_key = input("Please enter your TAVILY_API_KEY: ")
+        keys_obtained_interactively["TAVILY_API_KEY"] = tavily_api_key
+
+    # Write interactively obtained keys to .env file
+    if keys_obtained_interactively:
+        write_keys_to_env(keys_obtained_interactively)
+        # Reload environment variables to include the newly written keys
+        load_dotenv(override=True)
+
+    # Ensure keys are available in environment for subsequent calls
+    os.environ["OPENAI_API_KEY"] = openai_api_key
+    os.environ["TAVILY_API_KEY"] = tavily_api_key
+    # --- End API Key Handling ---
+
 
     # Load and assemble the task configuration based on the hierarchy
     task_config = load_task_config(args)
@@ -188,6 +273,10 @@ async def main():
     print(f"Starting research for query: {task_config['query']}")
     research_report = await chief_editor.run_research_task(task_id=uuid.uuid4())
 
+    if research_report is None:
+        print("Error: Research task failed and returned None.")
+        return # Exit the main function
+
     # Handle output (e.g., write to file)
     output_folder = task_config.get('output_folder', 'outputs')
     os.makedirs(output_folder, exist_ok=True)
@@ -201,10 +290,38 @@ async def main():
     if publish_formats.get('markdown'):
         md_output_path = os.path.splitext(output_path)[0] + ".md"
         with open(md_output_path, "w", encoding='utf-8') as f:
-            f.write(research_report['report'])
+            # Ensure research_report['report'] is not None before writing
+            report_content = research_report.get('report') if research_report else "Research report content not available."
+            f.write(report_content)
         print(f"Multi-agent report (Markdown) written to {md_output_path}")
 
     # Add logic here for PDF and DOCX if the ChiefEditorAgent returns them or if there's a separate publishing step
+
+def write_keys_to_env(keys):
+    """
+    Writes or updates API keys in a .env file in the ./gpt-researcher/ directory.
+    """
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    env_vars = {}
+
+    # Read existing .env file if it exists
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    key, value = line.split('=', 1)
+                    env_vars[key] = value
+
+    # Update with new keys
+    env_vars.update(keys)
+
+    # Write back to .env file
+    with open(env_path, 'w') as f:
+        for key, value in env_vars.items():
+            f.write(f"{key}={value}\n")
+    print(f"Updated .env file at {env_path}")
+
 
 if __name__ == "__main__":
     load_dotenv()
