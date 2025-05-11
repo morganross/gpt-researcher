@@ -362,7 +362,21 @@ if __name__ == "__main__":
 Set-Content -Path "Multi_Agent_CLI.py" -Value $multiAgentCliContent
 Write-Host "Created Multi_Agent_CLI.py from embedded content"
 
-python -m PyInstaller --onefile Multi_Agent_CLI.py --add-data "gpt_researcher/retrievers;gpt_researcher/retrievers" --add-data "$(python -c 'import tiktoken; import os; print(os.path.dirname(tiktoken.__file__))');tiktoken" --hidden-import tiktoken --hidden-import=tiktoken_ext.openai_public --hidden-import=tiktoken_ext
+# Determine if we're running from within the gpt-researcher directory or from a parent directory
+$scriptPath = $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $scriptPath
+$scriptName = Split-Path -Leaf $scriptPath
+
+# Check if the script is being run from within the gpt-researcher directory
+$isInGptResearcherDir = Test-Path (Join-Path $scriptDir "gpt_researcher")
+
+if ($isInGptResearcherDir) {
+    # Running from within gpt-researcher directory
+    python -m PyInstaller --onefile Multi_Agent_CLI.py --add-data "gpt_researcher/retrievers;gpt_researcher/retrievers" --add-data "$(python -c 'import tiktoken; import os; print(os.path.dirname(tiktoken.__file__))');tiktoken" --hidden-import tiktoken --hidden-import=tiktoken_ext.openai_public --hidden-import=tiktoken_ext
+} else {
+    # Running from parent directory
+    python -m PyInstaller --onefile ./gpt-researcher/Multi_Agent_CLI.py --add-data "./gpt-researcher/gpt_researcher/retrievers;gpt_researcher/retrievers" --add-data "$(python -c 'import tiktoken; import os; print(os.path.dirname(tiktoken.__file__))');tiktoken" --hidden-import tiktoken --hidden-import=tiktoken_ext.openai_public --hidden-import=tiktoken_ext
+}
 
 # Note: Keeping the terminal open after the executable runs is controlled by the Python script itself,
 # not by this build script. You need to add a pause command (like input() or os.system("pause"))
