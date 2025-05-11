@@ -385,12 +385,24 @@ if (Test-Path (Join-Path $scriptDir "gpt_researcher")) {
 
 Write-Host "GPT Researcher path: $gptResearcherPath"
 
+# Get absolute paths for PyInstaller
+$currentDir = Get-Location
+Write-Host "Current directory: $currentDir"
+
 if ($isInGptResearcherDir) {
     # Running from within gpt-researcher directory
-    python -m PyInstaller --onefile Multi_Agent_CLI.py --add-data "$gptResearcherPath/retrievers;gpt_researcher/retrievers" --add-data "$(python -c 'import tiktoken; import os; print(os.path.dirname(tiktoken.__file__))');tiktoken" --hidden-import tiktoken --hidden-import=tiktoken_ext.openai_public --hidden-import=tiktoken_ext
+    $retrieversPath = Join-Path $scriptDir "$gptResearcherPath\retrievers"
+    Write-Host "Retrievers path: $retrieversPath"
+    
+    # Use absolute paths for PyInstaller
+    python -m PyInstaller --onefile Multi_Agent_CLI.py --add-data "$retrieversPath;gpt_researcher/retrievers" --add-data "$(python -c 'import tiktoken; import os; print(os.path.dirname(tiktoken.__file__))');tiktoken" --hidden-import tiktoken --hidden-import=tiktoken_ext.openai_public --hidden-import=tiktoken_ext
 } else {
     # Running from parent directory
-    python -m PyInstaller --onefile ./gpt-researcher/Multi_Agent_CLI.py --add-data "./gpt-researcher/$gptResearcherPath/retrievers;gpt_researcher/retrievers" --add-data "$(python -c 'import tiktoken; import os; print(os.path.dirname(tiktoken.__file__))');tiktoken" --hidden-import tiktoken --hidden-import=tiktoken_ext.openai_public --hidden-import=tiktoken_ext
+    $retrieversPath = Join-Path $currentDir "gpt-researcher\$gptResearcherPath\retrievers"
+    Write-Host "Retrievers path: $retrieversPath"
+    
+    # Use absolute paths for PyInstaller
+    python -m PyInstaller --onefile ./gpt-researcher/Multi_Agent_CLI.py --add-data "$retrieversPath;gpt_researcher/retrievers" --add-data "$(python -c 'import tiktoken; import os; print(os.path.dirname(tiktoken.__file__))');tiktoken" --hidden-import tiktoken --hidden-import=tiktoken_ext.openai_public --hidden-import=tiktoken_ext
 }
 
 # Note: Keeping the terminal open after the executable runs is controlled by the Python script itself,
