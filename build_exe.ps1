@@ -368,7 +368,12 @@ $scriptDir = Split-Path -Parent $scriptPath
 $scriptName = Split-Path -Leaf $scriptPath
 
 # Check if the script is being run from within the gpt-researcher directory
-$isInGptResearcherDir = Test-Path (Join-Path $scriptDir "gpt_researcher")
+# The directory structure can have either gpt_researcher or gpt-researcher
+$isInGptResearcherDir = (Test-Path (Join-Path $scriptDir "gpt_researcher")) -or (Test-Path (Join-Path $scriptDir "gpt-researcher"))
+
+# Debug output
+Write-Host "Script directory: $scriptDir"
+Write-Host "Running from within gpt-researcher directory: $isInGptResearcherDir"
 
 if ($isInGptResearcherDir) {
     # Running from within gpt-researcher directory
